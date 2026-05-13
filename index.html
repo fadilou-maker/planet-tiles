@@ -729,6 +729,7 @@
         depth: GRASS_THICKNESS,
         bevelEnabled: false,
         steps: 1,
+        curveSegments: CURVE_SEGMENTS,
       });
 
       capGeo.rotateX(-Math.PI / 2);
@@ -871,6 +872,118 @@
       };
     }
 
+    // Adaptive midpoint tessellation: subdivides any triangle edge longer than
+    // `maxEdgeLength`. Short edges (notably tile boundaries already sampled at
+    // ~CURVE_SEGMENTS resolution) are left untouched, which keeps neighbour
+    // tiles crack-free after warping.
+    function tessellateOnce(geometry, maxEdgeLength) {
+      const pos = geometry.attributes.position;
+      if (!pos) return geometry;
+
+      const verts = new Array(pos.count);
+      for (let i = 0; i < pos.count; i++) {
+        verts[i] = [pos.getX(i), pos.getY(i), pos.getZ(i)];
+      }
+
+      const oldIndex = geometry.index;
+      const indices = [];
+      if (oldIndex) {
+        for (let i = 0; i < oldIndex.count; i++) indices.push(oldIndex.getX(i));
+      } else {
+        for (let i = 0; i < pos.count; i++) indices.push(i);
+      }
+
+      const midCache = new Map();
+      function midpoint(a, b) {
+        const key = a < b ? a + ',' + b : b + ',' + a;
+        let idx = midCache.get(key);
+        if (idx !== undefined) return idx;
+        const pa = verts[a], pb = verts[b];
+        idx = verts.length;
+        verts.push([(pa[0] + pb[0]) / 2, (pa[1] + pb[1]) / 2, (pa[2] + pb[2]) / 2]);
+        midCache.set(key, idx);
+        return idx;
+      }
+      function distSq(a, b) {
+        const dx = a[0] - b[0], dy = a[1] - b[1], dz = a[2] - b[2];
+        return dx * dx + dy * dy + dz * dz;
+      }
+
+      const maxSq = maxEdgeLength * maxEdgeLength;
+      const newIndices = [];
+      let changed = false;
+
+      for (let i = 0; i < indices.length; i += 3) {
+        const a = indices[i], b = indices[i + 1], c = indices[i + 2];
+        const pa = verts[a], pb = verts[b], pc = verts[c];
+        const sAB = distSq(pa, pb) > maxSq;
+        const sBC = distSq(pb, pc) > maxSq;
+        const sCA = distSq(pc, pa) > maxSq;
+        const n = (sAB ? 1 : 0) + (sBC ? 1 : 0) + (sCA ? 1 : 0);
+
+        if (n === 0) {
+          newIndices.push(a, b, c);
+        } else if (n === 1) {
+          if (sAB) {
+            const m = midpoint(a, b);
+            newIndices.push(a, m, c, m, b, c);
+          } else if (sBC) {
+            const m = midpoint(b, c);
+            newIndices.push(a, b, m, a, m, c);
+          } else {
+            const m = midpoint(c, a);
+            newIndices.push(a, b, m, m, b, c);
+          }
+          changed = true;
+        } else if (n === 2) {
+          if (sAB && sBC) {
+            const mab = midpoint(a, b);
+            const mbc = midpoint(b, c);
+            newIndices.push(a, mab, c, mab, b, mbc, mab, mbc, c);
+          } else if (sBC && sCA) {
+            const mbc = midpoint(b, c);
+            const mca = midpoint(c, a);
+            newIndices.push(a, b, mbc, a, mbc, mca, mca, mbc, c);
+          } else {
+            const mab = midpoint(a, b);
+            const mca = midpoint(c, a);
+            newIndices.push(a, mab, mca, mab, b, c, mca, mab, c);
+          }
+          changed = true;
+        } else {
+          const mab = midpoint(a, b);
+          const mbc = midpoint(b, c);
+          const mca = midpoint(c, a);
+          newIndices.push(a, mab, mca, b, mbc, mab, c, mca, mbc, mab, mbc, mca);
+          changed = true;
+        }
+      }
+
+      if (!changed) return geometry;
+
+      const newGeo = new THREE.BufferGeometry();
+      const arr = new Float32Array(verts.length * 3);
+      for (let i = 0; i < verts.length; i++) {
+        arr[i * 3]     = verts[i][0];
+        arr[i * 3 + 1] = verts[i][1];
+        arr[i * 3 + 2] = verts[i][2];
+      }
+      newGeo.setAttribute('position', new THREE.BufferAttribute(arr, 3));
+      newGeo.setIndex(newIndices);
+      return newGeo;
+    }
+
+    function tessellateGeometry(geometry, maxEdgeLength, maxIters = 6, maxVerts = 8000) {
+      let g = geometry;
+      for (let i = 0; i < maxIters; i++) {
+        if (g.attributes.position.count > maxVerts) break;
+        const next = tessellateOnce(g, maxEdgeLength);
+        if (next === g) break;
+        g = next;
+      }
+      return g;
+    }
+
     function warpGeometryToSphere(geometry, cellX, cellZ, rotY) {
       const pos = geometry.attributes.position;
       if (!pos) return;
@@ -898,11 +1011,18 @@
       geometry.computeBoundingBox();
     }
 
+    // Max triangle edge length (in 1×1 cell coords) that survives untouched.
+    // Anything longer gets subdivided so warped tiles actually follow the
+    // sphere instead of cutting under it as flat chords.
+    const TILE_TESSELLATE_MAX_EDGE = 0.14;
+
     function warpGroupToSphere(group, cellX, cellZ, rotY) {
       group.traverse((o) => {
         if (o.isMesh && o.geometry) {
-          o.geometry = o.geometry.clone();
-          warpGeometryToSphere(o.geometry, cellX, cellZ, rotY);
+          let geo = o.geometry.clone();
+          geo = tessellateGeometry(geo, TILE_TESSELLATE_MAX_EDGE);
+          o.geometry = geo;
+          warpGeometryToSphere(geo, cellX, cellZ, rotY);
 
           o.position.set(0, 0, 0);
           o.rotation.set(0, 0, 0);
