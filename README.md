@@ -21,7 +21,13 @@
 
 ---
 ## Update
-5/12/2016 Separer html, css et js.
+- seperate html, css et js.
+- Adding 3d planet and some moon.
+- Creating another level to have many kind of planet.
+- changing tuile gril by painting method.
+- adding 2 branch.
+  - first for 3d planet project.
+  - second for flate planet.
 ---
 ## En cours
 ### Ajout de tuiles
