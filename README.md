@@ -1,4 +1,4 @@
-# 🌍🗺️ PLANET-TILES
+# 🌍🗺️ PLANETS-EVOLUTION
 
 ## Objectifs
 - Planete sphérique en 3d interactif.

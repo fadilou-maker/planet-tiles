@@ -4,7 +4,25 @@
       "Bash(py --version)",
       "Bash(python -m http.server 8000)",
       "Bash(start *)",
-      "Bash(curl *)"
+      "Bash(curl *)",
+      "Bash(awk '/<script type=\"module\">/{flag=1; next} /<\\\\/script>/{flag=0} flag')",
+      "Bash(git add *)",
+      "Bash(git commit -m ' *)",
+      "Bash(git push *)",
+      "Bash(awk NR>=1840 && NR<=1900 *)",
+      "Bash(node --input-type=module --check)",
+      "Bash(cp \"C:\\\\Users\\\\dylan\\\\desktop\\\\planet tiles\\\\script.js\" /tmp/planet_script.mjs)",
+      "Bash(node --check /tmp/planet_script.mjs)",
+      "Bash(Get-ChildItem -Force)",
+      "Bash(Select-Object Name)",
+      "Bash(cd *)",
+      "Bash(python *)",
+      "Bash(powershell *)",
+      "Bash(node *)",
+      "Bash(npx --yes --quiet playwright --version)",
+      "Bash(gh repo *)",
+      "Bash(where gh *)",
+      "Bash(\"/c/Program Files/GitHub CLI/gh.exe\" --version)"
     ]
   }
 }
